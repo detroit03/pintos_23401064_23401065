@@ -89,6 +89,7 @@ struct thread
     uint8_t *stack;                     /* Saved stack pointer. */
     int priority;                       /* Priority. */
     int base_priority;
+    int64_t wakeup_tick;
     struct list donation;
     struct list_elem donation_element;
     struct lock *wait_lock;
