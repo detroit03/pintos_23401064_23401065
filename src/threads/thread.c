@@ -72,6 +72,7 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -200,7 +201,11 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
-
+  
+  if (thread_current ()->priority < t->priority) 
+    {
+      thread_yield ();
+    }
   return tid;
 }
 
@@ -237,7 +242,11 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_insert_ordered (&ready_list, &t->elem, thread_priority_less, NULL);
+  
+  /* ESKİSİ: list_push_back (&ready_list, &t->elem); */
+  /* YENİSİ: Daima sırayla ekle */
+  list_insert_ordered (&ready_list, &t->elem, thread_cmp_priority, NULL);
+  
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -301,15 +310,17 @@ thread_exit (void)
 void
 thread_yield (void) 
 {
-  struct thread *cur = thread_current ();
+  struct thread *curr = thread_current ();
   enum intr_level old_level;
-  
+
   ASSERT (!intr_context ());
 
   old_level = intr_disable ();
-  if (cur != idle_thread) 
-    list_insert_ordered (&ready_list, &cur->elem, thread_priority_less, NULL);
-  cur->status = THREAD_READY;
+  if (curr != idle_thread) 
+    {
+      list_insert_ordered (&ready_list, &curr->elem, thread_cmp_priority, NULL);
+    }
+  curr->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
 }
@@ -335,14 +346,34 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
-  thread_current ()->base_priority = new_priority;
+  if (thread_mlfqs) return;
+  
+  struct thread *curr = thread_current ();
+  enum intr_level old_level = intr_disable ();
 
-  thread_update_priority (thread_current ());
-  if (!list_empty (&ready_list) && 
-      thread_current ()->priority < list_entry (list_front (&ready_list), struct thread, elem)->priority)
+  curr->base_priority = new_priority;
+  curr->priority = new_priority;
+
+  if (!list_empty (&curr->donation)) 
     {
-      thread_yield ();
+      struct list_elem *e;
+      for (e = list_begin (&curr->donation); e != list_end (&curr->donation); e = list_next (e)) 
+        {
+          struct thread *t = list_entry (e, struct thread, donation_element);
+          if (t->priority > curr->priority) 
+            curr->priority = t->priority;
+        }
     }
+
+  if (!list_empty (&ready_list) && 
+      curr->priority < list_entry (list_front (&ready_list), struct thread, elem)->priority) 
+    {
+      intr_set_level (old_level);
+      thread_yield ();
+      return;
+    }
+    
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -469,9 +500,10 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+
   t->base_priority = priority;
-  list_init(&t->donation);
   t->wait_lock = NULL;
+  list_init (&t->donation);
   t->magic = THREAD_MAGIC;
 
   old_level = intr_disable ();
@@ -613,3 +645,10 @@ void thread_update_priority(struct thread *t){
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
+
+/* Thread'leri önceliklerine göre sıralamak için (Büyükten küçüğe) */
+bool 
+thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) 
+{
+  return list_entry (a, struct thread, elem)->priority > list_entry (b, struct thread, elem)->priority;
+}

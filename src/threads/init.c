@@ -62,6 +62,11 @@ static void paging_init (void);
 
 static char **read_command_line (void);
 static char **parse_options (char **argv);
+static void
+run_hello (char **argv UNUSED) 
+{
+  printf ("Hello World!\n");
+}
 static void run_actions (char **argv);
 static void usage (void);
 
@@ -309,6 +314,7 @@ run_actions (char **argv)
   static const struct action actions[] = 
     {
       {"run", 2, run_task},
+      {"hello",1,run_hello}, 
 #ifdef FILESYS
       {"ls", 1, fsutil_ls},
       {"cat", 2, fsutil_cat},
@@ -318,6 +324,11 @@ run_actions (char **argv)
 #endif
       {NULL, 0, NULL},
     };
+
+if (*argv == NULL) 
+    {
+      run_hello (NULL);
+    }
 
   while (*argv != NULL)
     {
@@ -333,7 +344,7 @@ run_actions (char **argv)
 
       /* Check for required arguments. */
       for (i = 1; i < a->argc; i++)
-        if (argv[i] == NULL)
+      if (argv[i] == NULL)
           PANIC ("action `%s' requires %d argument(s)", *argv, a->argc - 1);
 
       /* Invoke action and advance. */
