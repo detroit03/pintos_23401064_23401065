@@ -11,6 +11,8 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "devices/timer.h"
+#include "threads/fixed-point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -53,6 +55,7 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
+static int load_avg;  /* ortalama sistem yükü */
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -384,34 +387,46 @@ thread_get_priority (void)
 }
 
 /* Sets the current thread's nice value to NICE. */
-void
-thread_set_nice (int nice UNUSED) 
+void thread_set_nice (int nice) 
 {
-  /* Not yet implemented. */
+  struct thread *current = thread_current ();
+  current->nice = nice;
+
+  int new_priority = PRI_MAX - cnvrtr_fp_int (div_fp_int (current->recent_cpu, 4))- (nice * 2);
+
+  if (new_priority > PRI_MAX)
+    new_priority = PRI_MAX;
+
+  else if (new_priority < PRI_MIN)
+    new_priority = PRI_MIN;
+
+  current->priority = new_priority;
+
+  if (!list_empty (&ready_list))
+    {
+      struct thread *top = list_entry (list_front (&ready_list), struct thread, elem);
+      if (top->priority > current->priority)
+        thread_yield ();
+    } 
 }
 
 /* Returns the current thread's nice value. */
-int
-thread_get_nice (void) 
+int thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return thread_current ()->nice;
 }
 
 /* Returns 100 times the system load average. */
 int
 thread_get_load_avg (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return cnvrtr_fp_int_round (mult_fp_int (load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
-int
-thread_get_recent_cpu (void) 
+int thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  return cnvrtr_fp_int_round (mult_fp_int (thread_current ()->recent_cpu, 100));
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.
@@ -500,6 +515,18 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+
+  if (t == initial_thread)
+    {
+      t->nice = 0;
+      t->recent_cpu = 0;
+    }
+
+  else
+    {
+      t->nice = thread_current ()->nice;
+      t->recent_cpu = thread_current ()->recent_cpu;
+    }
 
   t->base_priority = priority;
   t->wait_lock = NULL;

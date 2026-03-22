@@ -95,6 +95,9 @@ struct thread
     struct lock *wait_lock;
     struct list_elem allelem;           /* List element for all threads list. */
 
+    int nice;
+    int recent_cpu;
+    
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
