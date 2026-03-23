@@ -696,61 +696,85 @@ void thread_update_priority(struct thread *t){
 /* Offset of `stack' member within `struct thread'.
    Used by switch.S, which can't figure it out on its own. */
 uint32_t thread_stack_ofs = offsetof (struct thread, stack);
-
+//A function that compares the overall priority of two threads.
 bool 
 thread_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) 
 {
-  return list_entry (a, struct thread, elem)->priority > list_entry (b, struct thread, elem)->priority;
+  struct thread *thread_a = list_entry (a, struct thread, elem);
+  struct thread *thread_b = list_entry (b, struct thread, elem);
+    
+  return thread_a->priority > thread_b->priority;
 }
-
+//A function that calculates the priority of a single thread.
 void
 mlfqs_calculate_priority (struct thread *t) 
 {
-  if (t == idle_thread) return;
+  if (t == idle_thread) {
+  return;
+  }
+  int recent_cpu_term = cnvrtr_fp_int_round (div_fp_int (t->recent_cpu, 4));
+  int nice_term = t->nice * 2;
+    
+  int new_prio = PRI_MAX - recent_cpu_term - nice_term;
 
-  int term1 = cnvrtr_fp_int_round (div_fp_int (t->recent_cpu, 4));
-  int new_prio = PRI_MAX - term1 - (t->nice * 2);
+  if (new_prio > PRI_MAX) {
+    new_prio = PRI_MAX;
+   }
+  if (new_prio < PRI_MIN) {
+    new_prio = PRI_MIN;
+  }
+    
 
-  if (new_prio > PRI_MAX) new_prio = PRI_MAX;
-  if (new_prio < PRI_MIN) new_prio = PRI_MIN;
   t->priority = new_prio;
 }
-
+// Function that updates the priority of all threads in the system.
 void
 mlfqs_calculate_all_priorities (void) 
 {
-  struct list_elem *e;
-
-  for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e)) 
+    struct list_elem *e;
+    for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e)) 
     {
-      struct thread *t = list_entry (e, struct thread, allelem);
-      mlfqs_calculate_priority (t);
+      struct thread *current_thread = list_entry (e, struct thread, allelem);
+        
+      mlfqs_calculate_priority (current_thread);
     }
 }
-
+// Function that calculates the average overall load of the system.
 void
 mlfqs_calculate_load_avg (void) 
 {
   int ready_threads = list_size (&ready_list);
-  if (thread_current () != idle_thread) ready_threads++;
+    
+  if (thread_current () != idle_thread) {
+    ready_threads++;
+  }
+    int load_avg_times_59 = mult_fp_int (load_avg, 59);
+    int ready_threads_fp = cnvrtr_int_fp (ready_threads); 
+    int total_sum = add_fp_fp (load_avg_times_59, ready_threads_fp);
 
-  int term1 = mult_fp_int (load_avg, 59);
-  int term2 = cnvrtr_int_fp (ready_threads);
-  
-  load_avg = div_fp_int (add_fp_fp (term1, term2), 60);
+    load_avg = div_fp_int (total_sum, 60);
 }
 
+//Function that updates the recent CPU usage of all threads in the system
 void
 mlfqs_calculate_all_recent_cpu (void) 
 {
   struct list_elem *e;
+    
   for (e = list_begin (&all_list); e != list_end (&all_list); e = list_next (e)) 
-    {
-      struct thread *t = list_entry (e, struct thread, allelem);
-      if (t == idle_thread) continue;
+  {
+    struct thread *current_thread = list_entry (e, struct thread, allelem);
 
-      int load_avg_2 = mult_fp_int (load_avg, 2);
-      int coeff = div_fp_fp (load_avg_2, add_fp_int (load_avg_2, 1));
-      t->recent_cpu = add_fp_int (mult_fp_fp (coeff, t->recent_cpu), t->nice);
+    if (current_thread == idle_thread) {
+      continue;
     }
+      int load_avg_times_2 = mult_fp_int (load_avg, 2);
+        
+      int denominator = add_fp_int (load_avg_times_2, 1);
+      int coefficient = div_fp_fp (load_avg_times_2, denominator);
+
+      int recent_cpu_decayed = mult_fp_fp (coefficient, current_thread->recent_cpu);
+
+      current_thread->recent_cpu = add_fp_int (recent_cpu_decayed, current_thread->nice);
+  }
 }
