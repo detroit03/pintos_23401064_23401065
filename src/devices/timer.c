@@ -19,6 +19,7 @@
 
 /* Number of timer ticks since OS booted. */
 static int64_t ticks;
+/* List of threads sleeping */
 static struct list thrsleep_list;
 
 /* Number of loops per timer tick.
@@ -34,20 +35,20 @@ static void real_time_delay (int64_t num, int32_t denom);
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 
-static bool
-wakeup_comparison (const struct list_elem *i, const struct list_elem *j, void *aux UNUSED)
+/* 2 thread karsilastirilarak erken uyanacak olanin listede one gecmesi saglanir.*/
+static bool wakeup_comparison (const struct list_elem *i, const struct list_elem *j, void *aux UNUSED)
 {
   struct thread *t1 = list_entry (i, struct thread, elem);
   struct thread *t2 = list_entry (j, struct thread, elem);
   return t1->wakeup_tick < t2->wakeup_tick;
 }
 
-void
-timer_init (void) 
+
+void timer_init (void) 
 {
   pit_configure_channel (0, 2, TIMER_FREQ);
   intr_register_ext (0x20, timer_interrupt, "8254 Timer");
-  list_init (&thrsleep_list);
+  list_init (&thrsleep_list); /* Uyuyan thread'lerin listesi tutulur.*/
 }
 
 /* Calibrates loops_per_tick, used to implement brief delays. */
@@ -109,6 +110,7 @@ timer_sleep (int64_t ticks)
 }
 */
 
+/* Normalde eskiden busy-wait metodu kullaniyorduk, boylece artik threadleri gercekten uyutmaya basliyoruz. */
 void timer_sleep (int64_t ticks) 
 {
   if (ticks <= 0)
@@ -119,7 +121,7 @@ void timer_sleep (int64_t ticks)
   enum intr_level old_level = intr_disable ();
   struct thread *current = thread_current ();
   current->wakeup_tick = timer_ticks () + ticks;
-  list_insert_ordered (&thrsleep_list, &current->elem, wakeup_comparison, NULL);
+  list_insert_ordered (&thrsleep_list, &current->elem, wakeup_comparison, NULL); /* Ekleme işlemi sırayla yapılacağı için en erken uyanacak thread en başta olmalı.*/
   thread_block ();
   intr_set_level (old_level);
 }
@@ -194,17 +196,22 @@ timer_print_stats (void)
   printf ("Timer: %"PRId64" ticks\n", timer_ticks ());
 }
 
-/* Timer interrupt handler. */
+
+/* Timer interrupt */
 static void timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
 
+  /* Bu while dongusu sayesinde uyandirilma zamani gelen thread'ler kontrol ediliyor.*/
   while (!list_empty (&thrsleep_list))
     {
       struct thread *thr = list_entry (list_front (&thrsleep_list), struct thread, elem);
+
+      /* Liste sirali oldugu icin siradaki thread uyanmayacaksa diger thread'lerin de uyanmamasi saglanir.*/
       if (thr->wakeup_tick > ticks)
         break;
+
       list_pop_front (&thrsleep_list);
       thread_unblock (thr);
     }

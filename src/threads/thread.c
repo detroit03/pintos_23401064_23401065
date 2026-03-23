@@ -55,7 +55,7 @@ static long long user_ticks;    /* # of timer ticks in user programs. */
 /* Scheduling. */
 #define TIME_SLICE 4            /* # of timer ticks to give each thread. */
 static unsigned thread_ticks;   /* # of timer ticks since last yield. */
-static int load_avg;  /* ortalama sistem yükü */
+static int load_avg;  /* system-wide load average for mlfqs */
 
 /* If false (default), use round-robin scheduler.
    If true, use multi-level feedback queue scheduler.
@@ -420,12 +420,13 @@ void thread_set_nice (int nice)
 
   if (new_priority > PRI_MAX)
     new_priority = PRI_MAX;
-
+  
   else if (new_priority < PRI_MIN)
     new_priority = PRI_MIN;
 
   current->priority = new_priority;
 
+  /* Daha yuksek onceligi olan thread varsa bekler. */
   if (!list_empty (&ready_list))
     {
       struct thread *top = list_entry (list_front (&ready_list), struct thread, elem);
@@ -537,9 +538,11 @@ init_thread (struct thread *t, const char *name, int priority)
   memset (t, 0, sizeof *t);
   t->status = THREAD_BLOCKED;
   strlcpy (t->name, name, sizeof t->name);
+
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
 
+  /* İlk thread 0 degerini alir, ardindan diger thread'ler komsu threadlerden miras alir. */
   if (t == initial_thread)
     {
       t->nice = 0;
