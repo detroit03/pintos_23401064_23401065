@@ -33,49 +33,61 @@
 #include "threads/thread.h"
 extern bool thread_priority_less(const struct list_elem *a, const struct list_elem *b, void *aux);
 
+/*Compares the priority of two threads*/
 bool 
 thread_donate_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED) 
 {
   return list_entry (a, struct thread, donation_element)->priority > 
          list_entry (b, struct thread, donation_element)->priority;
 }
+
 void 
 thread_donate_priority (struct thread *t) 
 {
   enum intr_level old_level = intr_disable ();
+  struct thread *current_thread = t;
   int depth = 0;
   
-  while (t != NULL && depth < 8) 
+  while (current_thread != NULL && depth < 8) 
     {
-      int max_prio = t->base_priority;
-      
-      if (!list_empty (&t->donation)) 
+      int max_prio = current_thread->base_priority;
+      if (!list_empty (&current_thread->donation)) 
+      {
+        struct list_elem *e;
+        for (e = list_begin (&current_thread->donation); 
+          e != list_end (&current_thread->donation); 
+          e = list_next (e)) 
         {
-          struct list_elem *e;
-          for (e = list_begin (&t->donation); e != list_end (&t->donation); e = list_next (e))
-            {
-              struct thread *donor = list_entry (e, struct thread, donation_element);
-              if (donor->priority > max_prio)
-                {
-                  max_prio = donor->priority;
-                }
-            }
+          struct thread *donor = list_entry (e, struct thread, donation_element);
+                
+               
+          if (donor->priority > max_prio) 
+          {
+            max_prio = donor->priority;
+          }
+        }
+      }
+        
+        current_thread->priority = max_prio;
+
+        struct lock *waiting_lock = current_thread->wait_lock;
+        
+        if (waiting_lock != NULL) 
+        {
+           
+            current_thread = waiting_lock->holder;
+        } 
+        else 
+        {
+            
+            current_thread = NULL;
         }
         
-      t->priority = max_prio;
-
-      if (t->wait_lock != NULL) 
-        {
-          t = t->wait_lock->holder;
-        } 
-      else 
-        {
-          t = NULL;
-        }
-      depth++;
+        depth++;
     }
-  intr_set_level (old_level);
+    intr_set_level (old_level);
 }
+
 
 
 /* Initializes semaphore SEMA to VALUE.  A semaphore is a
