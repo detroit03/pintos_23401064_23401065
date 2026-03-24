@@ -1,0 +1,396 @@
+\documentclass[a4paper,11pt]{paper}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=3.2cm]{geometry}
+\usepackage{enumitem}
+\usepackage{CJKutf8}
+\usepackage[colorlinks=true,urlcolor=blue,linkcolor=black]{hyperref}
+\usepackage{mathtools}
+\usepackage{listings}
+\usepackage{fancyvrb}
+\usepackage{enumitem}
+\usepackage{tikz}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{amsmath}
+\usepackage{calc}
+\usepackage{relsize}
+\usepackage{emoji}  % lualatex
+\usepackage{fontawesome}  % lualatex
+\usepackage{fancyvrb}
+
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhf{} % clear existing header/footer entries
+% Place Page X of Y on the right-hand
+% side of the footer
+\fancyfoot[R]{Page \thepage \hspace{1pt} of \pageref{LastPage}}
+
+\usetikzlibrary{calc,shapes.multipart,chains,arrows}
+
+\renewcommand*{\theenumi}{\thesection.\arabic{enumi}}
+\renewcommand*{\theenumii}{\theenumi.\arabic{enumii}}
+\let\orighref\href
+\renewcommand{\href}[2]{\orighref{#1}{#2\,\smaller[4]\faExternalLink}}
+
+\let\Red=\alert
+\definecolor{few-gray-bright}{HTML}{010202}
+\definecolor{few-red-bright}{HTML}{EE2E2F}
+\definecolor{few-green-bright}{HTML}{008C48}
+\definecolor{few-blue-bright}{HTML}{185AA9}
+\definecolor{few-orange-bright}{HTML}{F47D23}
+\definecolor{few-purple-bright}{HTML}{662C91}
+\definecolor{few-brown-bright}{HTML}{A21D21}
+\definecolor{few-pink-bright}{HTML}{B43894}
+
+\definecolor{few-gray}{HTML}{737373}
+\definecolor{few-red}{HTML}{F15A60}
+\definecolor{few-green}{HTML}{7AC36A}
+\definecolor{few-blue}{HTML}{5A9BD4}
+\definecolor{few-orange}{HTML}{FAA75B}
+\definecolor{few-purple}{HTML}{9E67AB}
+\definecolor{few-brown}{HTML}{CE7058}
+\definecolor{few-pink}{HTML}{D77FB4}
+
+\definecolor{few-gray-light}{HTML}{CCCCCC}
+\definecolor{few-red-light}{HTML}{F2AFAD}
+\definecolor{few-green-light}{HTML}{D9E4AA}
+\definecolor{few-blue-light}{HTML}{B8D2EC}
+\definecolor{few-orange-light}{HTML}{F3D1B0}
+\definecolor{few-purple-light}{HTML}{D5B2D4}
+\definecolor{few-brown-light}{HTML}{DDB9A9}
+\definecolor{few-pink-light}{HTML}{EBC0DA}
+
+\colorlet{alert-color}{few-red-bright!80!black}
+\colorlet{comment}{few-blue-bright}
+\colorlet{string}{few-green-bright}
+
+\lstdefinestyle{ccode}{
+    showstringspaces=false,
+    stringstyle={\ttfamily\color{string}},
+    language=C,escapeinside=`',columns=flexible,commentstyle=\color{comment},
+    basicstyle=\ttfamily,
+    classoffset=2, keywordstyle=\color{alert-color}
+}
+
+\lstnewenvironment{ccode}[1][]%
+    {\lstset{style=ccode,basicstyle=\ttfamily\openup-.17\baselineskip,#1}}%
+    {}
+
+\lstset{
+  basicstyle=\itshape,
+  xleftmargin=3em,
+  literate={->}{$\rightarrow$}{2}
+           {α}{$\alpha$}{1}
+           {δ}{$\delta$}{1}
+           {ε}{$\epsilon$}{1}
+}
+
+\renewcommand{\baselinestretch}{1.1}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1em}
+
+\title{INF333 2025-2026 Spring Semester}
+\author{
+\textbf{\color{black}{Fanatics}} 
+\\ Önder Akyüz <23401064@ogr.gsu.edu.tr>
+\\ Gökay Kayra Bereket <23401065@ogr.gsu.edu.tr>}
+
+\begin{document}
+
+\maketitle
+
+\section*{\LARGE Homework I \\
+Design Document}
+
+Please provide answers inline in a \texttt{quote} environment.
+
+
+\section{Preliminaries}
+
+\textbf{Q1:} If you have any preliminary comments on your submission, notes for
+the TAs, or extra credit, please give them here.
+\begin{quote}
+We worked together on this homework. Önder did the alarm clock and advanced scheduler 
+parts, Kayra did priority scheduling and donation. All 27 tests pass.
+\end{quote}
+
+
+\textbf{Q2:} Please cite any offline or online sources you consulted while
+preparing your submission, other than the Pintos documentation, course text, and
+lecture notes.
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+
+\section{Sleep}
+
+\subsection{Data Structures}
+
+\textbf{Q3:} Copy here the declaration of each new or changed `struct' or
+`struct' member, global or static variable, `typedef', or enumeration.
+
+Identify the purpose of each in 25 words or less.
+\begin{quote}
+In thread.h part:
+  int64\_t wakeup\_tick; / tick when the thread should wake up
+
+In timer.c part:
+  static struct list thrsleep\_list; / list for threads that are sleeping right now
+  
+  wakeup\_comparison() / compares two threads by wakeup\_tick for sorted insertion
+\end{quote}
+
+\subsection{Algorithms}
+
+
+\textbf{Q4:} Briefly describe your implementation of \texttt{thread\_join()} and
+how it interacts with thread termination.
+
+\begin{quote}
+thread\_join() is not part of this assignment.
+\end{quote}
+
+\textbf{Q5:} What steps are taken to minimize the amount of time spent in the
+timer interrupt handler?
+
+\begin{quote}
+The sleep list is sorted by wakeup time, so we only need to look at the 
+front. Once we see a thread that shouldn't wake up we could stop checking. 
+We don't need to go through the whole list.
+\end{quote}
+
+
+\subsection{Synchronization}
+
+\textbf{Q6:} Consider parent thread \texttt{P} with child thread \texttt{C}.
+How do you ensure proper synchronization and avoid race conditions when
+\texttt{P} calls \texttt{wait(C)} before \texttt{C} exits?  After \texttt{C}
+exits?  How do you ensure that all resources are freed in each case?  How about
+when \texttt{P} terminates without waiting, before \texttt{C} exits?  After
+\texttt{C} exits?  Are there any special cases?
+
+\begin{quote}
+We didn't implement thread\_join.
+\end{quote}
+
+\textbf{Q7:} How are race conditions avoided when multiple threads call
+\texttt{timer\_sleep()} simultaneously?
+
+\begin{quote}
+We turn off interrupts before modifying thrsleep\_list and calling 
+thread\_block(). Like this, only one thread can modify the list at a 
+same time.
+\end{quote}
+
+\textbf{Q8:} How are race conditions avoided when a timer interrupt occurs
+during a call to \texttt{timer\_sleep()}?
+
+\begin{quote}
+We disable interrupts at the start of timer\_sleep() before inserting 
+into the list and blocking. In this way, a timer interrupt can't be between 
+the list insertion and thread\_block(). Otherwise things would break.
+\end{quote}
+
+
+\subsection{Rationale}
+
+\textbf{Q9:} Critique your design, pointing out advantages and disadvantages in
+your design choices.
+
+\begin{quote}
+Advantage: The sorted list makes the interrupt handler fast because we only check the front.
+
+Disadvantage: Inserting into a sorted list takes O(n) time where n is the number of sleeping threads. 
+However, it is not a big problem.
+\end{quote}
+
+
+
+\section{Priority Scheduling}
+
+\subsection{Data Structures}
+
+\textbf{Q10:} Copy here the declaration of each new or changed `struct' or
+`struct' member, global or static variable, `typedef', or enumeration.  Identify
+the purpose of each in 25 words or less
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+\textbf{Q11:} Describe the sequence of events when a call to
+\texttt{lock\_acquire()} causes a priority donation.  How is nested donation
+handled?
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+\textbf{Q12:} Describe the sequence of events when \texttt{lock\_release()} is
+called on a lock that a higher-priority thread is waiting for.
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+\subsection{Synchronization}
+ 
+\textbf{Q13:} Describe a potential race in \texttt{thread\_set\_priority()} and
+explain how your implementation avoids it. Can you use a lock to avoid this
+race?
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+\subsection{Rationale}
+
+\textbf{Q14:} Why did you choose this design?  In what ways is it superior to
+another design you considered?
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+\section{Advanced Scheduler}
+
+\subsection{Data Structures}
+
+\textbf{Q15:} Copy here the declaration of each new or changed `struct' or
+`struct' member, global or static variable, `typedef', or enumeration.  Identify
+the purpose of each in 25 words or less.
+
+\begin{quote}
+In thread.h part:
+  int nice; / niceness between -20 and 20,                                
+  int recent\_cpu; / cpu time used recently as fixed-point
+
+In thread.c part:
+  static int load\_avg; / system load average as fixed-point
+
+fixed-point.h new file: There are some functions for converting between int and fixed-point and doing arithmetic on fixed-point numbers.
+\end{quote}
+
+\subsection{Algorithms}
+
+\textbf{Q16:} Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
+has a recent\_cpu value of 0.  Fill in the table below showing the scheduling
+decision and the priority and recent\_cpu values for each thread after each
+given number of timer ticks:
+
+\small
+\begin{Verbatim}[frame=single]
+timer  recent_cpu    priority   thread
+ticks   A   B   C   A   B   C   to run
+-----  --  --  --  --  --  --   ------
+  0     0   0   0   63  61  59    A
+  4     4   0   0   62  61  59    A
+  8     8   0   0   61  61  59    B
+ 12     8   4   0   61  60  59    A
+ 16     12  4   0   60  60  59    B
+ 20     12  8   0   60  59  59    A
+ 24     16  8   0   59  59  59    C
+ 28     16  8   4   59  59  58    A
+ 32     20  8   4   58  59  58    B
+ 36     20  12  4   58  58  58    C
+\end{Verbatim}
+
+
+\textbf{Q17:} Did any ambiguities in the scheduler specification make values in
+the table uncertain?  If so, what rule did you use to resolve them?  Does this
+match the behavior of your scheduler?
+
+\begin{quote}
+When threads have the same priority, it is not clear that which thread should run. 
+We just go with round robin, so whichever has been waiting longest. 
+Our scheduler does this because we always take from the front of the sorted ready list.
+\end{quote}
+
+
+\textbf{Q18:} How is the way you divided the cost of scheduling between code
+inside and outside interrupt context likely to affect performance?
+
+\begin{quote}
+All the mlfqs updates happen inside the timer interrupt. We increment recent\_cpu every tick, 
+update load\_avg every second and recalculate priorities every 4 ticks. 
+It is simple but may be slow with lots of threads because we work of them each time.
+\end{quote}
+
+\subsection{Rationale}
+
+\textbf{Q19:} Briefly critique your design, pointing out advantages and
+disadvantages in your design choices. If you were to have extra time to work on
+this part of the project, how might you choose to refine or improve your design?
+
+\begin{quote}
+Advantage: Simple design, we just followed the formulas 
+so it is easy to understand and debug.
+
+Disadvantage: We loop over all threads every 4 ticks and every second 
+which is O(n). Than, it could be slow if there are many threads.
+
+With extra time, we would only update threads whose recent\_cpu actually 
+changed instead of going through all of them every time.
+\end{quote}
+
+\textbf{Q20:} The assignment explains arithmetic for fixed-point math in detail,
+but it leaves it open to you to implement it.  Why did you decide to implement
+it the way you did?  If you created an abstraction layer for fixed-point math,
+that is, an abstract data type and/or a set of functions or macros to manipulate
+fixed-point numbers, why did you do so?  If not, why not?
+
+\begin{quote}
+We made a separate fixed-point.h file with functions for the math. 
+Functions are easier to read than macros and the compiler inlines 
+them anyway so it doesn't matter. We used 17.14 format because the 
+assignment told us to use that format.
+\end{quote}
+
+\section{Survey Questions}
+
+Answering these questions is optional, but it will help us improve the course in future quarters.  Feel free to tell us anything you want--these questions are just to spur your thoughts.  You may also choose to respond anonymously in the course evaluations at the end of the quarter.
+
+\textbf{Q1:} In your opinion, was this assignment, or any one of the three
+problems in it, too easy or too hard?  Did it take too long or too little time?
+
+\begin{quote}
+Alarm clock was less difficult compared to the other parts.
+\end{quote}
+
+\textbf{Q2:} Did you find that working on a particular part of the assignment
+gave you greater insight into some aspect of OS design?
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+\textbf{Q3:} Is there some particular fact or hint we should give students in
+future quarters to help them solve the problems?  Conversely, did you find any
+of our guidance to be misleading?
+
+\begin{quote}
+Starting this project from scratch was a bit overwhelming. It would help 
+if some extra resources or guides were shared to point students in the 
+right direction.
+
+\end{quote}
+
+\textbf{Q4:} Do you have any suggestions for the TAs to more effectively assist
+students, either for future quarters or the remaining projects?
+
+\begin{quote}
+  Answer here
+\end{quote}
+
+\textbf{Q5:} Any other comments?
+\begin{quote}
+Good project, we learned a lot.
+\end{quote}
+
+
+\end{document}
