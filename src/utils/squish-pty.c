@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stropts.h>
+/* #include <stropts.h> */
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/time.h>
@@ -285,19 +285,27 @@ main (int argc __attribute__ ((unused)), char *argv[])
 
   /* System V implementations need STREAMS configuration for the
      slave. */
-  if (isastream (slave))
-    {
-      if (ioctl (slave, I_PUSH, "ptem") < 0
-          || ioctl (slave, I_PUSH, "ldterm") < 0)
-        fail_io ("ioctl");
-    }
-
-  /* Arrange to get notified when a child dies, by writing a byte
-     to a pipe fd.  We really want to use pselect() and
+//  if (isastream (slave))
+//    {
+//      if (ioctl (slave, I_PUSH, "ptem") < 0
+//          || ioctl (slave, I_PUSH, "ldterm") < 0)
+//        fail_io ("ioctl");
+//    }
+//
+//  /* Arrange to get notified when a child dies, by writing a byte
+     /* to a pipe fd.  We really want to use pselect() and
      sigprocmask(), but Solaris 2.7 doesn't have it. */
   if (pipe (pipe_fds) < 0)
     fail_io ("pipe");
-  dead_child_fd = pipe_fds[1];
+/*
+  if (isastream (slave))
+    {
+      if (ioctl (slave, I_PUSH, "ptem") < 0
+          || ioctl (slave, I_PUSH, "ldterm") < 0
+          || ioctl (slave, I_PUSH, "ttcompat") < 0)
+        fail_io ("ioctl");
+    }
+*/  dead_child_fd = pipe_fds[1];
 
   memset (&sa, 0, sizeof sa);
   sa.sa_handler = sigchld_handler;

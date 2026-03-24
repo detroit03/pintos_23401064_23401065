@@ -123,7 +123,13 @@ preparing your submission, other than the Pintos documentation, course text, and
 lecture notes.
 
 \begin{quote}
-  Answer here
+Outside of the course materials, I consulted the following resources to better understand the synchronization primitives and the MLFQS fixed-point arithmetic:
+
+\begin{itemize}
+    \item \textbf{Stack Overflow:} Used for clarifying general C syntax issues and understanding how \texttt{list\_entry} macros work in C.
+    \item \textbf{YouTube (Operating Systems Tutorials):} Watched various conceptual videos on Priority Inversion and Priority Donation to visualize the lock-waiting chains.
+    \item \textbf{GNU C Library (glibc) Documentation:} Consulted for standard integer types and bitwise operations used in fixed-point calculations.
+\end{itemize}
 \end{quote}
 
 
@@ -136,13 +142,23 @@ lecture notes.
 
 Identify the purpose of each in 25 words or less.
 \begin{quote}
-In thread.h part:
-  int64\_t wakeup\_tick; / tick when the thread should wake up
+In \texttt{thread.h} inside \texttt{struct thread}:\\
+  \texttt{int64\_t wakeup\_tick;} / Tick when the thread should wake up, used for the alarm clock implementation.\\
+  \texttt{int base\_priority;} / Stores the original priority to restore it after all priority donations are released.\\
+  \texttt{struct lock *wait\_lock;} / The lock the thread is currently waiting for; used to handle nested priority donations.\\
+  \texttt{struct list donation;} / List of threads currently donating their priority to this thread.\\
+  \texttt{struct list\_elem donation\_element;} / List element used to track this thread in a lock holder's donation list.\\
+  \texttt{int nice;} / Determines how "nice" a thread is to others, affecting its priority in MLFQS.\\
+  \texttt{int recent\_cpu;} / Estimates how much CPU time the thread has recently received in fixed-point format.
 
-In timer.c part:
-  static struct list thrsleep\_list; / list for threads that are sleeping right now
-  
-  wakeup\_comparison() / compares two threads by wakeup\_tick for sorted insertion
+\vspace{0.5em}
+In \texttt{timer.c} part:\\
+  \texttt{static struct list thrsleep\_list;} / Global list that stores all currently sleeping threads, ordered by their wake-up ticks.\\
+  \texttt{wakeup\_comparison();} / Comparison function used to keep the \texttt{thrsleep\_list} sorted by \texttt{wakeup\_tick} for efficient insertion.
+
+\vspace{0.5em}
+In \texttt{thread.c} as a global/static variable:\\
+  \texttt{static int load\_avg;} / Estimates the average number of threads ready to run over the past minute in fixed-point.
 \end{quote}
 
 \subsection{Algorithms}
@@ -219,8 +235,13 @@ However, it is not a big problem.
 `struct' member, global or static variable, `typedef', or enumeration.  Identify
 the purpose of each in 25 words or less
 
+
 \begin{quote}
-  Answer here
+In thread.h inside struct thread:\\
+  int base\_priority; / Stores the thread's original priority, allowing it to revert back once donated priorities are no longer needed.\\
+  struct lock *wait\_lock; / Points to the lock this thread is currently waiting for, which is essential for following the donation chain.\\
+  struct list donation; / A list containing all the threads that have donated their higher priority to this specific thread.\\
+  struct list\_elem donation\_element; / The list element used to insert this thread into the donation list of the thread holding the requested lock.
 \end{quote}
 
 \textbf{Q11:} Describe the sequence of events when a call to
@@ -228,14 +249,33 @@ the purpose of each in 25 words or less
 handled?
 
 \begin{quote}
-  Answer here
+When a thread tries to acquire a held lock, the following happens:
+
+1. It sets its \texttt{wait\_lock} to remember what it's blocked on.
+
+2. It inserts itself into the lock holder's \texttt{donation} list.
+
+3. If its priority is higher, it donates this priority to the holder so the lock can be released faster.
+
+4. Finally, the thread goes to sleep via \texttt{sema\_down()}.
+
+\textbf{Nested Donation Handling:}\\
+To handle chains (like A waits for B, B waits for C), I use a \texttt{while} loop. When a priority is donated, I check if the holder is also waiting for another lock. By following the \texttt{wait\_lock->holder} pointers, I pass the priority up the chain. I set a maximum depth limit of 8 iterations to prevent infinite loops and keep the system fast.
 \end{quote}
 
 \textbf{Q12:} Describe the sequence of events when \texttt{lock\_release()} is
 called on a lock that a higher-priority thread is waiting for.
 
 \begin{quote}
-  Answer here
+When a thread calls \texttt{lock\_release()}, it no longer needs the priority donated for that lock. The steps are:
+
+1. I loop through the \texttt{donation} list and remove all threads waiting for this specific lock.
+
+2. I recalculate the thread's priority. If it still holds other locks with donors, its priority becomes the highest remaining donation. Otherwise, it drops back to its \texttt{base\_priority}.
+
+3. I clear the lock's holder and call \texttt{sema\_up()}. Since the semaphore's wait list is sorted, this automatically wakes up the highest-priority waiter.
+
+4. Since the current thread's priority just dropped and the awakened thread has a higher priority, the current thread immediately yields the CPU to let it run.
 \end{quote}
 
 \subsection{Synchronization}
@@ -245,7 +285,11 @@ explain how your implementation avoids it. Can you use a lock to avoid this
 race?
 
 \begin{quote}
-  Answer here
+A race condition can happen if a timer interrupt fires right in the middle of \texttt{thread\_set\_priority()}. The scheduler might read a half-updated priority and make a wrong decision before the thread finishes recalculating its donations.
+
+To avoid this, I disabled the interrupts using \texttt{intr\_disable()} before updating the priority and restored them right after. This makes the update atomic.
+
+We CANNOT use a lock here. Locks can put the caller to sleep if they are busy. The timer interrupt handler also reads thread priorities, and since interrupt handlers are not allowed to sleep, waiting for a lock would crash the kernel.
 \end{quote}
 
 \subsection{Rationale}
@@ -254,7 +298,11 @@ race?
 another design you considered?
 
 \begin{quote}
-  Answer here
+I chose to keep a \texttt{donation} list inside the thread structure to track all the threads donating to it. 
+
+Another design I considered was simply storing the highest donated priority in a single integer variable instead of a list. However, I quickly realized that this simple alternative completely fails when a thread holds multiple locks. If a thread releases one lock, it needs to know the \textit{second} highest donated priority from the other locks to fall back to. Without a list, that history is lost.
+
+My list-based design is superior because it keeps a complete record of who donated what. When \texttt{lock\_release()} is called, I can just remove the threads waiting for that specific lock from the list and easily recalculate the new maximum priority from the remaining donors. Also, putting a hard depth limit of 8 for nested donations keeps the system fast and safe from infinite loops.
 \end{quote}
 
 \section{Advanced Scheduler}
@@ -366,7 +414,9 @@ Alarm clock was less difficult compared to the other parts.
 gave you greater insight into some aspect of OS design?
 
 \begin{quote}
-  Answer here
+Working on Priority Donation gave me the greatest insight into OS design. Before this assignment, I thought scheduling was as simple as picking the highest-priority thread from a ready list. Implementing nested donations showed me how deeply interconnected threads become when they share resources like locks.
+
+Additionally, handling race conditions in \texttt{thread\_set\_priority()} was a huge learning moment. Realizing that I had to disable hardware interrupts instead of just using a lock---because the timer interrupt handler cannot sleep---really made me understand the harsh, low-level reality of kernel concurrency.
 \end{quote}
 
 \textbf{Q3:} Is there some particular fact or hint we should give students in
@@ -384,7 +434,7 @@ right direction.
 students, either for future quarters or the remaining projects?
 
 \begin{quote}
-  Answer here
+One suggestion would be to provide a small visual diagram in the early discussion sessions showing exactly how \texttt{list\_elem} is embedded inside \texttt{struct thread} or \texttt{struct lock}. It takes a while to get used to the Pintos list API, and a visual guide would save future students a lot of trial and error before they even start coding.
 \end{quote}
 
 \textbf{Q5:} Any other comments?
