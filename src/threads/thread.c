@@ -560,6 +560,21 @@ init_thread (struct thread *t, const char *name, int priority)
   list_init (&t->donation);
   t->magic = THREAD_MAGIC;
 
+#ifdef USERPROG
+  t->exit_code = 0;
+  t->load_success = false;
+  t->already_waited = false;
+  t->parent_tid = TID_ERROR;
+  t->exec_file = NULL;
+  t->fd_count = 2;
+  sema_init (&t->sema_load, 0);
+  sema_init (&t->sema_wait, 0);
+  list_init (&t->child_list);
+  int i;
+  for (i = 0; i < 128; i++)
+    t->fd_table[i] = NULL;
+#endif
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
