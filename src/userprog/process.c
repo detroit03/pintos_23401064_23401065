@@ -37,12 +37,71 @@ process_execute (const char *file_name)
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
+  
+  char *save;
+  char *temp = palloc_get_page (0);
+  if (temp == NULL) {
+    palloc_free_page (fn_copy);
+    return TID_ERROR;
+  }
+  strlcpy (temp, file_name, PGSIZE);
+  strtok_r (temp, " ", &save);
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  palloc_free_page (temp);
+
   if (tid == TID_ERROR)
     palloc_free_page (fn_copy); 
   return tid;
+}
+
+static void
+push_arguments (void **esp, const char *prog, char *rest)
+{
+  char *args[128];
+  int argc = 0;
+
+  args[argc++] = (char *) prog;
+
+  char *tok;
+  while ((tok = strtok_r (NULL, " ", &rest)) != NULL)
+    args[argc++] = tok;
+
+  char *ptrs[128];
+  int i;
+  for (i = argc - 1; i >= 0; i--) {
+    size_t len = strlen (args[i]) + 1;
+    *esp -= len;
+    memcpy (*esp, args[i], len);
+    ptrs[i] = *esp;
+  }
+
+  /* word align */
+  *esp = (void *) ((uintptr_t) *esp & ~3u);
+
+  /* null sentinel */
+  *esp -= 4;
+  *(uint32_t *) *esp = 0;
+
+  /* argv pointers */
+  for (i = argc - 1; i >= 0; i--) {
+    *esp -= 4;
+    *(char **) *esp = ptrs[i];
+  }
+
+  /* argv */
+  char **argv_start = (char **) *esp;
+  *esp -= 4;
+  *(char ***) *esp = argv_start;
+
+  /* argc */
+  *esp -= 4;
+  *(int *) *esp = argc;
+
+  /* return address */
+  *esp -= 4;
+  *(uint32_t *) *esp = 0;
 }
 
 /* A thread function that loads a user process and starts it
@@ -54,12 +113,18 @@ start_process (void *file_name_)
   struct intr_frame if_;
   bool success;
 
+  char *save;
+  char *prog = strtok_r (file_name, " ", &save);
+
   /* Initialize interrupt frame and load executable. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
   success = load (file_name, &if_.eip, &if_.esp);
+
+  if (success)
+    push_arguments (&if_.esp, prog, save);
 
   /* If load failed, quit. */
   palloc_free_page (file_name);
