@@ -567,9 +567,15 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent_tid = TID_ERROR;
   t->exec_file = NULL;
   t->fd_count = 2;
+  
+  /* Load ve wait icin semaforlar baslatilir. */
   sema_init (&t->sema_load, 0);
   sema_init (&t->sema_wait, 0);
+
+  /* Child surecler icin liste baslatilir. */
   list_init (&t->child_list);
+  
+  /* fd tablosundaki tum slotlar bos olarak isaretlenir. */
   int i;
   for (i = 0; i < 128; i++)
     t->fd_table[i] = NULL;
