@@ -150,10 +150,11 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int
-process_wait (tid_t child_tid UNUSED) 
-{
-  return -1;
+int process_wait (tid_t child_tid UNUSED) 
+{   
+    /* Implementasyon olmadigi icin child sonsuza dek beklenir. */
+    for (;;)
+      ;
 }
 
 /* Free the current process's resources. */
