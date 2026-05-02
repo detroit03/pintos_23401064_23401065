@@ -152,9 +152,12 @@ start_process (void *file_name_)
    does nothing. */
 int process_wait (tid_t child_tid UNUSED) 
 {   
-    /* Implementasyon olmadigi icin child sonsuza dek beklenir. */
-    for (;;)
-      ;
+  /* Henuz gercek implementation yapilmadigi icin dongude bekleniyor. */
+  while (true)
+    {
+      thread_yield ();
+    }
+  return -1;
 }
 
 /* Free the current process's resources. */
