@@ -6,6 +6,10 @@
 #include "userprog/pagedir.h"
 #include "threads/vaddr.h"
 #include "devices/shutdown.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "devices/input.h"
+#include "threads/synch.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -21,10 +25,20 @@ static unsigned get_unsigned_argument (struct intr_frame *frame, int index);
 static void sys_halt (void);
 static void sys_exit (int status);
 static int sys_write (int file_descriptor, const void *buffer, unsigned size);
+static int sys_open (const char *file);
+static void sys_close (int fd);
+static bool sys_create (const char *file, unsigned initial_size);
+static bool sys_remove (const char *file);
+static int sys_read (int fd, void *buffer, unsigned size);
+static int sys_filesize (int fd);
+static void sys_seek (int fd, unsigned p);
+static unsigned sys_tell (int fd);
 
+struct lock filesys_lock;
 /* Syscall handler kaydedilir. */
 void syscall_init (void) 
 {
+  lock_init (&filesys_lock);
   intr_register_int (0x30, 3, INTR_ON, syscall_handler, "syscall");
 }
 
@@ -55,6 +69,57 @@ static void syscall_handler (struct intr_frame *frame)
           frame->eax = sys_write (file_descriptor, buffer, size);
           break;
         }
+
+      case SYS_OPEN:
+      {
+        frame->eax = sys_open ((const char *) get_pointer_argument (frame, 1));
+        break;
+      }
+
+      case SYS_CLOSE:
+      {
+        sys_close (get_argument (frame, 1));
+        break;
+      }
+
+      case SYS_CREATE:
+      {
+        frame->eax = sys_create ((const char *) get_pointer_argument (frame, 1),
+                                  get_unsigned_argument (frame, 2));
+        break;
+      }
+
+      case SYS_REMOVE:
+      {
+        frame->eax = sys_remove ((const char *) get_pointer_argument (frame, 1));
+        break;
+      }
+
+      case SYS_READ:
+      {
+        frame->eax = sys_read (get_argument (frame, 1),
+                               get_pointer_argument (frame, 2),
+                               get_unsigned_argument (frame, 3));
+        break;
+      }
+
+      case SYS_FILESIZE:
+      {
+        frame->eax = sys_filesize (get_argument (frame, 1));
+        break;
+      }
+
+      case SYS_SEEK:
+      {
+        sys_seek (get_argument (frame, 1), get_unsigned_argument (frame, 2));
+        break;
+      }
+
+      case SYS_TELL:
+      {
+        frame->eax = sys_tell (get_argument (frame, 1));
+        break;
+      } 
 
       default:
         sys_exit (-1);
@@ -145,4 +210,107 @@ static void *get_pointer_argument (struct intr_frame *frame, int index)
 static unsigned get_unsigned_argument (struct intr_frame *frame, int index)
 {
   return (unsigned) get_argument (frame, index);
+}
+
+static int sys_open (const char *file)
+{
+  validate_string (file);
+  lock_acquire (&filesys_lock);
+  struct file *f = filesys_open (file);
+  lock_release (&filesys_lock);
+  if (f == NULL)
+    return -1;
+  struct thread *t = thread_current ();
+  int fd;
+  for (fd = 2; fd < 128; fd++)
+    {
+      if (t->fd_table[fd] == NULL)
+        {
+          t->fd_table[fd] = f;
+          return fd;
+        }
+    }
+  file_close (f);
+  return -1;
+} 
+
+static void sys_close (int fd)
+{
+  struct thread *t = thread_current ();
+  if (fd < 2 || fd >= 128 || t->fd_table[fd] == NULL)
+    return;
+  lock_acquire (&filesys_lock);
+  file_close (t->fd_table[fd]);
+  lock_release (&filesys_lock);
+  t->fd_table[fd] = NULL;
+}
+
+static bool sys_create (const char *file, unsigned initial_size)
+{
+  validate_string (file);
+  lock_acquire (&filesys_lock);
+  bool ret = filesys_create (file, initial_size);
+  lock_release (&filesys_lock);
+  return ret;
+}
+
+static bool sys_remove (const char *file)
+{
+  validate_string (file);
+  lock_acquire (&filesys_lock);
+  bool ret = filesys_remove (file);
+  lock_release (&filesys_lock);
+  return ret;
+}
+
+static int sys_read (int fd, void *buffer, unsigned size)
+{
+  validate_buffer (buffer, size);
+  if (fd == 0)
+    {
+      unsigned i;
+      uint8_t *b = buffer;
+      for (i = 0; i < size; i++)
+        b[i] = input_getc ();
+      return size;
+    }
+  struct thread *t = thread_current ();
+  if (fd < 2 || fd >= 128 || t->fd_table[fd] == NULL)
+    return -1;
+  lock_acquire (&filesys_lock);
+  int ret = file_read (t->fd_table[fd], buffer, size);
+  lock_release (&filesys_lock);
+  return ret;
+}
+
+static int sys_filesize (int fd)
+{
+  struct thread *t = thread_current ();
+  if (fd < 2 || fd >= 128 || t->fd_table[fd] == NULL)
+    return -1;
+  lock_acquire (&filesys_lock);
+  int ret = file_length (t->fd_table[fd]);
+  lock_release (&filesys_lock);
+  return ret;
+}
+
+static void sys_seek (int fd, unsigned p)
+{
+  struct thread *t = thread_current ();
+  if (fd < 2 || fd >= 128 || t->fd_table[fd] == NULL)
+    return;
+  lock_acquire (&filesys_lock);
+  file_seek (t->fd_table[fd], p);
+  lock_release (&filesys_lock);
+}
+
+static unsigned sys_tell (int fd)
+{
+  struct thread *t = thread_current ();
+  if (fd < 2 || fd >= 128 || t->fd_table[fd] == NULL)
+    return -1;
+  lock_acquire (&filesys_lock);
+  unsigned ret = file_tell (t->fd_table[fd]);
+  lock_release (&filesys_lock);
+  return ret;
 }
