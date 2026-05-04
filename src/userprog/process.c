@@ -153,10 +153,9 @@ start_process (void *file_name_)
 int process_wait (tid_t child_tid UNUSED) 
 {   
   /* Henuz gercek implementation yapilmadigi icin dongude bekleniyor. */
-  while (true)
-    {
-      thread_yield ();
-    }
+  int i;
+  for (i = 0; i < 1000000000; i++)
+    thread_yield ();
   return -1;
 }
 
