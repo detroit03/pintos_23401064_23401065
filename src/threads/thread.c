@@ -203,6 +203,10 @@ thread_create (const char *name, int priority,
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
 
+  #ifdef USERPROG
+  t->parent_tid = thread_current ()->tid;
+  #endif  
+
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
   kf->eip = NULL;
@@ -567,7 +571,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->parent_tid = TID_ERROR;
   t->exec_file = NULL;
   t->fd_count = 2;
-  
+  t->self_status = NULL;
+
   /* Load ve wait icin semaforlar baslatilir. */
   sema_init (&t->sema_load, 0);
   sema_init (&t->sema_wait, 0);
@@ -801,4 +806,24 @@ mlfqs_calculate_all_recent_cpu (void)
 
       current_thread->recent_cpu = add_fp_int (recent_cpu_decayed, current_thread->nice);
   }
+}
+
+/* Verilen tid'ye ait thread'i tum thread listesini taraarak bulur. */
+struct thread * get_thread_by_tid (tid_t tid)
+{
+  struct list_elem *iter;
+  enum intr_level old_level = intr_disable ();
+
+  for (iter = list_begin (&all_list); iter != list_end (&all_list); iter = list_next (iter))
+    {
+      struct thread *t = list_entry (iter, struct thread, allelem);
+      if (t->tid == tid)
+        {
+          intr_set_level (old_level);
+          return t;
+        }
+    }
+  intr_set_level (old_level);
+
+  return NULL;
 }

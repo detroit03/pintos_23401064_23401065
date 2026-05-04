@@ -113,7 +113,7 @@ struct thread
 
     tid_t parent_tid;
     struct list child_list;
-    struct list_elem child_elem;
+    struct child_status *self_status;
 
     struct file *exec_file;
     struct file *fd_table[128];
@@ -147,6 +147,7 @@ void thread_unblock (struct thread *);
 struct thread *thread_current (void);
 tid_t thread_tid (void);
 const char *thread_name (void);
+struct thread *get_thread_by_tid (tid_t tid);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);

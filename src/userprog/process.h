@@ -1,7 +1,19 @@
 #ifndef USERPROG_PROCESS_H
 #define USERPROG_PROCESS_H
-
 #include "threads/thread.h"
+#include "threads/synch.h"
+#include <list.h>
+
+/* Parent thread child'i icin bilgiler: */
+struct child_status
+  {
+    tid_t tid;
+    int exit_code;
+    bool is_alive;
+    bool already_waited;
+    struct semaphore wait_sema;
+    struct list_elem elem;
+  };
 
 tid_t process_execute (const char *file_name);
 int process_wait (tid_t);

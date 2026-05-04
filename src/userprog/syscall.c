@@ -10,6 +10,7 @@
 #include "filesys/file.h"
 #include "devices/input.h"
 #include "threads/synch.h"
+#include "userprog/process.h"
 
 static void syscall_handler (struct intr_frame *);
 
@@ -120,6 +121,21 @@ static void syscall_handler (struct intr_frame *frame)
         frame->eax = sys_tell (get_argument (frame, 1));
         break;
       } 
+
+      case SYS_EXEC:
+      {
+        const char *cmd_line = (const char *) get_pointer_argument (frame, 1);
+        validate_string (cmd_line);
+        frame->eax = (uint32_t) process_execute (cmd_line);
+        break;
+      }
+
+      case SYS_WAIT:
+      {
+        tid_t child_pid = (tid_t) get_argument (frame, 1);
+        frame->eax = (uint32_t) process_wait (child_pid);
+        break;
+      }
 
       default:
         sys_exit (-1);
