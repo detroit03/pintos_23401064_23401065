@@ -17,6 +17,7 @@
 #include "threads/palloc.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
+#include "threads/malloc.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -25,34 +26,71 @@ static bool load (const char *cmdline, void (**eip) (void), void **esp);
    FILENAME.  The new thread may be scheduled (and may even exit)
    before process_execute() returns.  Returns the new process's
    thread id, or TID_ERROR if the thread cannot be created. */
-tid_t
-process_execute (const char *file_name) 
+tid_t process_execute (const char *file_name) 
 {
   char *fn_copy;
   tid_t tid;
 
-  /* Make a copy of FILE_NAME.
-     Otherwise there's a race between the caller and load(). */
+  /* file_name kopyalanir. Cunku race gerceklesebilir. (caller ve load arasinda) */
   fn_copy = palloc_get_page (0);
   if (fn_copy == NULL)
     return TID_ERROR;
   strlcpy (fn_copy, file_name, PGSIZE);
   
+  /* Program adini tutmak adina kopya tutuluyor. */
   char *save;
   char *temp = palloc_get_page (0);
-  if (temp == NULL) {
+
+  if (temp == NULL) 
+  {
     palloc_free_page (fn_copy);
     return TID_ERROR;
   }
-  strlcpy (temp, file_name, PGSIZE);
-  strtok_r (temp, " ", &save);
 
-  /* Create a new thread to execute FILE_NAME. */
-  tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
+  strlcpy (temp, file_name, PGSIZE);
+  char *program_name = strtok_r (temp, " ", &save);
+
+  /* Child surec icin status bilgisi olusturuluyor. */
+  struct child_status *child_info = malloc (sizeof (struct child_status));
+  if (child_info == NULL)
+    {
+      palloc_free_page (fn_copy);
+      palloc_free_page (temp);
+      return TID_ERROR;
+    }
+
+  /* Default Degerler: */
+  child_info->exit_code = -1;
+  child_info->is_alive = true;
+  child_info->already_waited = false;
+  sema_init (&child_info->wait_sema, 0);
+
+  /* Yeni bir thread olusturuluyor. */
+  tid = thread_create (program_name, PRI_DEFAULT, start_process, fn_copy);
   palloc_free_page (temp);
 
   if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+    {
+      palloc_free_page (fn_copy);
+      free (child_info);
+      return TID_ERROR;
+    }
+
+  /* Status struct'i parent'in child listesine ekleniyor. */
+  child_info->tid = tid;
+  list_push_back (&thread_current ()->child_list, &child_info->elem);
+
+  /* Child thread bulunur ve status pointer ona baglanir. */
+  struct thread *child_thread = get_thread_by_tid (tid);
+
+  if (child_thread != NULL)
+    child_thread->self_status = child_info;
+
+  sema_down (&thread_current ()->sema_load);
+
+  if (!thread_current ()->load_success)
+    return TID_ERROR;
+
   return tid;
 }
 
@@ -104,10 +142,8 @@ push_arguments (void **esp, const char *prog, char *rest)
   *(uint32_t *) *esp = 0;
 }
 
-/* A thread function that loads a user process and starts it
-   running. */
-static void
-start_process (void *file_name_)
+/* Bir thread fonksiyonu olarak user process'i yukleyip calistirir. */
+static void start_process (void *file_name_)
 {
   char *file_name = file_name_;
   struct intr_frame if_;
@@ -116,7 +152,7 @@ start_process (void *file_name_)
   char *save;
   char *prog = strtok_r (file_name, " ", &save);
 
-  /* Initialize interrupt frame and load executable. */
+  /* Interrupt frame baslatilir ve executable yuklenir. */
   memset (&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
@@ -126,10 +162,23 @@ start_process (void *file_name_)
   if (success)
     push_arguments (&if_.esp, prog, save);
 
-  /* If load failed, quit. */
+  /* sema_load uzerinden uyanilmasi icin parent thread'e load durumu bildirilir. */
+  struct thread *cur = thread_current ();
+  struct thread *parent = get_thread_by_tid (cur->parent_tid);
+
+  if (parent != NULL)
+    {
+      parent->load_success = success;
+      sema_up (&parent->sema_load);
+    }
+
   palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  if (!success)
+    {
+      if (cur->self_status != NULL)
+        cur->self_status->is_alive = false;
+      thread_exit ();
+    }
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -146,38 +195,82 @@ start_process (void *file_name_)
    exception), returns -1.  If TID is invalid or if it was not a
    child of the calling process, or if process_wait() has already
    been successfully called for the given TID, returns -1
-   immediately, without waiting.
+   immediately, without waiting. */
 
-   This function will be implemented in problem 2-2.  For now, it
-   does nothing. */
-int process_wait (tid_t child_tid UNUSED) 
-{   
-  /* Henuz gercek implementation yapilmadigi icin dongude bekleniyor. */
-  int i;
-  for (i = 0; i < 1000000000; i++)
-    thread_yield ();
-  return -1;
+/* Verilen child tidsi icin bekler ve exit kodunu doner. Eger gecersiz bir cocuksa -1 doner. */
+int process_wait (tid_t child_tid)
+{
+  struct thread *cur = thread_current ();
+  struct list_elem *iter;
+  struct child_status *target = NULL;
+
+  /* Child listesinde verilen tid aranir. */
+  for (iter = list_begin (&cur->child_list); iter != list_end (&cur->child_list);
+       iter = list_next (iter))
+    {
+      struct child_status *c = list_entry (iter, struct child_status, elem);
+      if (c->tid == child_tid)
+        {
+          target = c;
+          break;
+        }
+    }
+
+  /* Child bulunamazsa hata doner. */
+  if (target == NULL)
+    return -1;
+  if (target->already_waited)
+    return -1;
+
+  target->already_waited = true;
+
+  /* Child eger hala calisiyorsa exit olana dek bekler. */
+  if (target->is_alive)
+    sema_down (&target->wait_sema);
+
+  int exit_code = target->exit_code;
+
+  /* Bilgi struct'i listeden cikarilarak serbest birakilir. */
+  list_remove (&target->elem);
+  free (target);
+
+  return exit_code;
 }
 
-/* Free the current process's resources. */
-void
-process_exit (void)
+/* Mevcut process'te yer alan kaynaklar serbest birakilir. */
+void process_exit (void)
 {
   struct thread *cur = thread_current ();
   uint32_t *pd;
 
-  /* Destroy the current process's page directory and switch back
-     to the kernel-only page directory. */
-  pd = cur->pagedir;
-  if (pd != NULL) 
+  /* Yalnizca user process'ler icin termination mesaji yazdirilir. */
+  if (cur->pagedir != NULL)
+    printf ("%s: exit(%d)\n", cur->name, cur->exit_code);
+
+  /* Surec sonlandigi sirada acik dosyalar kapatilir. */
+  int fd;
+  for (fd = 2; fd < 128; fd++)
     {
-      /* Correct ordering here is crucial.  We must set
-         cur->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
-         process page directory.  We must activate the base page
-         directory before destroying the process's page
-         directory, or our active page directory will be one
-         that's been freed (and cleared). */
+      if (cur->fd_table[fd] != NULL)
+        {
+          file_close (cur->fd_table[fd]);
+          cur->fd_table[fd] = NULL;
+        }
+    }
+
+  /* Parent thread'e exit kodu iletilir ve uyandirma islemi gerceklesir. */
+  if (cur->self_status != NULL)
+    {
+      cur->self_status->exit_code = cur->exit_code;
+      cur->self_status->is_alive = false;
+      sema_up (&cur->self_status->wait_sema);
+    }
+
+  /* Mevcut process'in page directory'si ortadan kaldirilir. */
+  /* Burada sira onemlidir. Timer interrupt'in page directory'ye geri donmemesi icin once NULL'a set ediliyor. Ardindan base directory aktif edilerek eski page directory yok ediliyor. */
+  pd = cur->pagedir;
+  if (pd != NULL)
+    {
       cur->pagedir = NULL;
       pagedir_activate (NULL);
       pagedir_destroy (pd);
