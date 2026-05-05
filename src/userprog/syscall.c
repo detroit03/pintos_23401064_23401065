@@ -165,7 +165,13 @@ static int sys_write (int file_descriptor, const void *buffer, unsigned size)
       return size;
     }
 
-  return -1;
+  struct thread *t = thread_current ();
+  if (file_descriptor < 2 || file_descriptor >= 128 || t->fd_table[file_descriptor] == NULL)
+    return -1;
+  lock_acquire (&filesys_lock);
+  int ret = file_write (t->fd_table[file_descriptor], buffer, size);
+  lock_release (&filesys_lock);
+  return ret;
 }
 
 /* Surecin exit kodu ayarlanir ve thread_exit fonksiyonu cagrilir. */
