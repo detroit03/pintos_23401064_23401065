@@ -257,7 +257,12 @@ void process_exit (void)
           cur->fd_table[fd] = NULL;
         }
     }
-
+  if (cur->exec_file != NULL)
+    {
+      file_allow_write (cur->exec_file);
+      file_close (cur->exec_file);
+      cur->exec_file = NULL;
+    }
   /* Parent thread'e exit kodu iletilir ve uyandirma islemi gerceklesir. */
   if (cur->self_status != NULL)
     {
@@ -470,10 +475,13 @@ load (const char *file_name, void (**eip) (void), void **esp)
   *eip = (void (*) (void)) ehdr.e_entry;
 
   success = true;
+  file_deny_write (file);
+  t->exec_file = file;
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  if (!success)
+    file_close (file);
   return success;
 }
 
