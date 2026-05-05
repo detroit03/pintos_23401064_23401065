@@ -18,6 +18,7 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "threads/malloc.h"
+#include "userprog/syscall.h"
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
@@ -177,6 +178,7 @@ static void start_process (void *file_name_)
     {
       if (cur->self_status != NULL)
         cur->self_status->is_alive = false;
+      cur->name[0] = '\0';
       thread_exit ();
     }
 
@@ -244,7 +246,7 @@ void process_exit (void)
   uint32_t *pd;
 
   /* Yalnizca user process'ler icin termination mesaji yazdirilir. */
-  if (cur->pagedir != NULL)
+  if (cur->pagedir != NULL && cur->name[0] != '\0')
     printf ("%s: exit(%d)\n", cur->name, cur->exit_code);
 
   /* Surec sonlandigi sirada acik dosyalar kapatilir. */
@@ -387,6 +389,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
     goto done;
   process_activate ();
 
+  extern struct lock filesys_lock;
+  lock_acquire (&filesys_lock);
+
   /* Open executable file. */
   file = filesys_open (file_name);
   if (file == NULL) 
@@ -480,6 +485,7 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
+  lock_release (&filesys_lock);
   if (!success)
     file_close (file);
   return success;
