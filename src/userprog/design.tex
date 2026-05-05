@@ -92,11 +92,11 @@
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{1em}
 
-\title{INF333 2023-2024 Spring Semester}
+\title{INF333 2025-2026 Spring Semester}
 \author{
-\textbf{\color{blue}{Şirinler}} {\small(your group name, use an appropriate color)}
-\\ Student 1 Name <stu1@gsu.edu.tr>
-\\ Student 2 Name <stu2@gsu.edu.tr>}
+\textbf{\color{black}{Fanatics}} 
+\\ Önder Akyüz <23401064@ogr.gsu.edu.tr>
+\\ Gökay Kayra Bereket <23401065@ogr.gsu.edu.tr>}
 
 \begin{document}
 
@@ -112,7 +112,7 @@ Please provide answers inline in a \texttt{quote} environment.
 
 \textbf{Q1:} If you have any preliminary comments on your submission, notes for the TAs, or extra credit, please give them here.
 \begin{quote}
-  Answer here
+No extra credit. We worked together and split the project. Önder did the thread fields, syscall setup and exec/wait parts. Gökay did the argument passing, file syscalls and deny-write with cleanup.
 \end{quote}
 
 
@@ -163,7 +163,35 @@ Identify the purpose of each in 25 words or less.
 
 \textbf{Q7:} Copy here the declaration of each new or changed `struct' or `struct' member, global or static variable, `typedef', or enumeration.  Identify the purpose of each in 25 words or less
 \begin{quote}
-  Answer here
+We added these fields to \texttt{struct thread} in \texttt{thread.h} for user programs:
+\begin{verbatim}
+int exit_code;                    /* exit code of the process */
+struct semaphore sema_load;       /* parent waits for child to load */
+bool load_success;                /* child sets this after load() */
+tid_t parent_tid;                 /* parent's tid */
+struct list child_list;           /* children of this thread */
+struct child_status *self_status; /* points to our entry in parent's list */
+struct file *exec_file;           /* the executable */
+struct file *fd_table[128];       /* fd 0,1 */
+int fd_count;                     /* next free fd */
+\end{verbatim}
+
+In \texttt{process.h} we added a struct that the parent stores per child:
+\begin{verbatim}
+struct child_status {
+  tid_t tid;                  /* child's tid */
+  int exit_code;              /* child's exit code */
+  bool is_alive;              /* false after child exits */
+  bool already_waited;        /* true if wait was called for this child */
+  struct semaphore wait_sema; /* parent waits on this */
+  struct list_elem elem;      /* element in parent's child_list */
+};
+\end{verbatim}
+
+In \texttt{syscall.c} we added one global lock:
+\begin{verbatim}
+struct lock filesys_lock;   /* protects all filesystem calls */
+\end{verbatim}
 \end{quote}
 
 \textbf{Q8:} Describe how file descriptors are associated with open files. Are file descriptors unique within the entire OS or just within a single process?
@@ -173,24 +201,28 @@ Identify the purpose of each in 25 words or less.
 
 \textbf{Q9:} Describe the sequence of events when \texttt{lock\_release()} is called on a lock that a higher-priority thread is waiting for.
 \begin{quote}
-  Answer here
+This question is about the priority donation logic from HW1, not something we implemented in this homework.
 \end{quote}
 
 \subsection{Algorithms}
 
 \textbf{Q10:} Describe your code for reading and writing user data from the kernel.
 \begin{quote}
-  Answer here
+Before the kernel uses an user pointer, we check it with \texttt{validate\_pointer}. It checks for NULL, then \texttt{is\_user\_vaddr}, then \texttt{pagedir\_get\_page}. If any check fails we can call \texttt{exit\_process(-1)}.
+For buffers and strings, we have \texttt{validate\_buffer} and \texttt{validate\_string} which checks every byte. While reading a 4-byte argument from the stack, we check both the first and the last byte. Thanks to this action, we don't miss a page boundary.
 \end{quote}
 
 \textbf{Q11:} Suppose a system call causes a full page (4,096 bytes) of data to be copied from user space into the kernel.  What is the least and the greatest possible number of inspections of the page table (e.g. calls to \texttt{pagedir\_get\_page())} that might result?  What about for a system call that only copies 2 bytes of data?  Is there room for improvement in these numbers, and how much?
 \begin{quote}
-  Answer here
+For 4096 bytes, the minimum possible number is 1 inspection (if the buffer is page aligned) and the maximum possible number is 2 (if it crosses a page boundary).
+For 2 bytes, the minimum possible number is also 1 and the maximum possible number is also 2.
+There is room for improvement. Right now \texttt{validate\_buffer} can call \texttt{pagedir\_get\_page} once per byte, so for 4096 bytes we make 4096 calls instead of 1 or 2. A better way would be to only check the first byte, the last byte and one byte at the start of each page in between.
 \end{quote}
 
 \textbf{Q12:} Briefly describe your implementation of the "wait" system call and how it interacts with process termination.
 \begin{quote}
-  Answer here
+\texttt{process\_wait} looks for the given tid in the current thread's \texttt{child\_list}. If it doesn't find it or if \texttt{already\_waited} is true, it can return -1. Otherwise it sets \texttt{already\_waited = true} and does \texttt{sema\_down} on \texttt{wait\_sema} if the child is still alive.
+When the child exits; \texttt{process\_exit} sets the exit code, marks \texttt{is\_alive = false} and does \texttt{sema\_up}. The parent wakes up, reads the exit code, frees the struct and returns it.
 \end{quote}
 
 \textbf{Q13:} Any access to user program memory at a user-specified address can fail due to a bad pointer value.  Such accesses must cause the process to be terminated.  System calls are fraught with such accesses, e.g. a "write" system call requires reading the system call number from the user stack, then each of the call's three arguments, then an arbitrary amount of user memory, and any of these can fail at any point.  This poses a design and error-handling problem: how do you best avoid obscuring the primary function of code in a morass of error-handling?  Furthermore, when an error is detected, how do you ensure that all temporarily allocated resources (locks, buffers, etc.) are freed?  In a few paragraphs, describe the strategy or strategies you adopted for managing these issues.  Give an example.
@@ -202,19 +234,21 @@ Identify the purpose of each in 25 words or less.
 
 \textbf{Q14:} The "exec" system call returns -1 if loading the new executable fails, so it cannot return before the new executable has completed loading.  How does your code ensure this?  How is the load success/failure status passed back to the thread that calls "exec"?
 \begin{quote}
-  Answer here
+After \texttt{thread\_create}, the parent does \texttt{sema\_down} on its own \texttt{sema\_load}. The child runs \texttt{start\_process} and calls \texttt{load}. After load returns, the child finds the parent with \texttt{get\_thread\_by\_tid(parent\_tid)}, writes the result into the parent's \texttt{load\_success} field and does \texttt{sema\_up} on \texttt{sema\_load}.
+The parent wakes up and checks \texttt{load\_success}. If that is false, exec returns -1. If that is true, it returns the child's tid. With this way, exec never returns before load is done.
 \end{quote}
 
-\textbf{Q15:} Consider parent process P with child process C.  How do you ensure proper synchronization and avoid race conditions when P calls wait(C) before C exits?  After C exits?  How do you ensure that all resources are freed in each case? How about when P terminates without waiting, before C exits?  After C exits?  Are there any special cases?
+\textbf{Q15:} Consider parent process P with child process C. How do you ensure proper synchronization and avoid race conditions when P calls wait(C) before C exits?  After C exits?  How do you ensure that all resources are freed in each case? How about when P terminates without waiting, before C exits?  After C exits?  Are there any special cases?
 \begin{quote}
-  Answer here
+For the wait part: If P calls wait(C) before C exits, P sleeps on \texttt{sema\_down(\&wait\_sema)}. When C exits, \texttt{process\_exit} does \texttt{sema\_up} so P wakes up, reads the exit code and frees the \texttt{child\_status}. If P calls wait(C) after C already exited, \texttt{sema\_down} returns right away because C already did \texttt{sema\_up}. The other cases are handled in the cleanup step.
 \end{quote}
 
 \subsection{Rationale}
 
 \textbf{Q16:} Why did you choose to implement access to user memory from the kernel in the way that you did?
 \begin{quote}
-  Answer here
+We chose the explicit validation approach (calling \texttt{pagedir\_get\_page} before each access) instead of the page-fault method. The main reason is that is easier to read. Every syscall validates its arguments at the top and if a pointer is bad, we can call \texttt{exit\_process(-1)}.
+The downside is that is slower. Because we check every byte. The page-fault method would be faster. But it would mean writing more code in the exception handler. We wanted to keep things simple.
 \end{quote}
 
 \textbf{Q17:} What advantages or disadvantages can you see to your design for file descriptors?
@@ -224,7 +258,8 @@ Identify the purpose of each in 25 words or less.
 
 \textbf{Q18:} The default \texttt{tid\_t} to \texttt{pid\_t} mapping is the identity mapping. If you changed it, what advantages are there to your approach?
 \begin{quote}
-  Answer here
+We didn't change the default. \texttt{pid\_t} is the same value as \texttt{tid\_t}. This works. Because in Pintos, every users process is just one thread, so the two ids always match.
+The advantage is that the code stays simple. We don't need an extra table to map between them.
 \end{quote}
 
 
@@ -234,15 +269,15 @@ Answering these questions is optional, but it will help us improve the course in
 
 \textbf{Q1:} In your opinion, was this assignment, or any one of the three problems in it, too easy or too hard?  Did it take too long or too little time?
 \begin{quote}
-  Answer here
+The assignment was challenging but also doable. The exec/wait part with synchronization took us the most time. Because we had to think carefully about race conditions.
 \end{quote}
 
 \textbf{Q2:} Did you find that working on a particular part of the assignment gave you greater insight into some aspect of OS design?
 \begin{quote}
-  Answer here
+Yes, working on exec and wait, gave us a much better understanding of how parent and child processes communicate in a real OS.
 \end{quote}
 
-\textbf{Q3:} Is there some particular fact or hint we should give students in future quarters to help them solve the problems?  Conversely, did you find any of our guidance to be misleading?
+\textbf{Q3:} Is there some particular fact or hint we should give students in future quarters to help them solve the problems? Conversely, did you find any of our guidance to be misleading?
 \begin{quote}
   Answer here
 \end{quote}
@@ -250,7 +285,7 @@ Answering these questions is optional, but it will help us improve the course in
 \textbf{Q4:} Do you have any suggestions for us to more effectively assist students,
 either for future semesters or the remaining projects?
 \begin{quote}
-  Answer here
+Sometimes, the difficulty of the homework feels a bit heavy compared to our level of background knowledge and we get stuck for a long time on small details. It would be helpful if this could be balanced a bit.
 \end{quote}
 
 \textbf{Q5:} Any other comments?
