@@ -119,7 +119,8 @@ No extra credit. We worked together and split the project. Önder did the thread
 \textbf{Q2:} Please cite any offline or online sources you consulted while preparing your
 submission, other than the Pintos documentation, course text, and lecture notes.
 \begin{quote}
-  Answer here
+We only used the Pintos documentation and looked at a few Stack Overflow
+posts about strtok\_r usage.
 \end{quote}
 
 
@@ -131,7 +132,12 @@ submission, other than the Pintos documentation, course text, and lecture notes.
 
 Identify the purpose of each in 25 words or less.
 \begin{quote}
-  Answer here
+No new structs were added for argument passing. We used two local arrays
+inside \texttt{push\_arguments}:
+\begin{verbatim}
+char *args[128];  /* argument strings */
+char *ptrs[128];  /* their stack addresses */
+\end{verbatim}
 \end{quote}
 
 
@@ -139,21 +145,30 @@ Identify the purpose of each in 25 words or less.
 
 
 \textbf{Q4:} Briefly describe how you implemented argument parsing.  How do you arrange for the elements of \texttt{argv[]} to be in the right order? How do you avoid overflowing the stack page?
-
 \begin{quote}
-  Answer here
+We use \texttt{strtok\_r} to split the command line. The program name
+goes to \texttt{thread\_create}, the rest is passed along. After load
+succeeds, \texttt{push\_arguments} pushes strings onto the stack right
+to left, word-aligns, then pushes argv pointers, argv, argc and a fake
+return address. We cap arguments at 128 to avoid overflow.
 \end{quote}
 
 \subsection{Rationale}
 
 \textbf{Q5:} Why does Pintos implement \texttt{strtok\_r()} but not \texttt{strtok()}?
 \begin{quote}
-  Answer here
+\texttt{strtok} uses a global variable internally so it is not thread-safe.
+In a kernel with multiple threads, two calls at the same time would
+corrupt each other's state. \texttt{strtok\_r} takes an explicit save
+pointer so each caller has its own state.
 \end{quote}
 
 \textbf{Q6:} In Pintos, the kernel separates commands into an executable name and arguments.  In Unix-like systems, the shell does this separation.  Identify at least two advantages of the Unix approach.
 \begin{quote}
-  Answer here
+First, the shell can expand wildcards and variables before the program
+runs, which the kernel cannot do. Second, the kernel stays simpler since
+parsing logic lives in userspace and different shells can have different
+syntax without changing the kernel.
 \end{quote}
 
 
@@ -196,7 +211,10 @@ struct lock filesys_lock;   /* protects all filesystem calls */
 
 \textbf{Q8:} Describe how file descriptors are associated with open files. Are file descriptors unique within the entire OS or just within a single process?
 \begin{quote}
-  Answer here
+Each process has its own \texttt{fd\_table[128]}. When a file is opened,
+we store the file pointer at the first free slot from index 2 and return
+that index as the fd. File descriptors are unique per process, not OS-wide.
+fd 0 and fd 1 are reserved for stdin and stdout.
 \end{quote}
 
 \textbf{Q9:} Describe the sequence of events when \texttt{lock\_release()} is called on a lock that a higher-priority thread is waiting for.
@@ -227,7 +245,11 @@ When the child exits; \texttt{process\_exit} sets the exit code, marks \texttt{i
 
 \textbf{Q13:} Any access to user program memory at a user-specified address can fail due to a bad pointer value.  Such accesses must cause the process to be terminated.  System calls are fraught with such accesses, e.g. a "write" system call requires reading the system call number from the user stack, then each of the call's three arguments, then an arbitrary amount of user memory, and any of these can fail at any point.  This poses a design and error-handling problem: how do you best avoid obscuring the primary function of code in a morass of error-handling?  Furthermore, when an error is detected, how do you ensure that all temporarily allocated resources (locks, buffers, etc.) are freed?  In a few paragraphs, describe the strategy or strategies you adopted for managing these issues.  Give an example.
 \begin{quote}
-  Answer here
+We validate all pointers before doing anything else. \texttt{validate\_pointer},
+\texttt{validate\_buffer} and \texttt{validate\_string} are called at the
+top of each syscall before any lock is acquired. If a pointer is bad,
+\texttt{exit\_process(-1)} is called immediately and there is nothing to
+clean up since no resources were taken yet.
 \end{quote}
 
 \subsection{Synchronization}
@@ -240,7 +262,13 @@ The parent wakes up and checks \texttt{load\_success}. If that is false, exec re
 
 \textbf{Q15:} Consider parent process P with child process C. How do you ensure proper synchronization and avoid race conditions when P calls wait(C) before C exits?  After C exits?  How do you ensure that all resources are freed in each case? How about when P terminates without waiting, before C exits?  After C exits?  Are there any special cases?
 \begin{quote}
-For the wait part: If P calls wait(C) before C exits, P sleeps on \texttt{sema\_down(\&wait\_sema)}. When C exits, \texttt{process\_exit} does \texttt{sema\_up} so P wakes up, reads the exit code and frees the \texttt{child\_status}. If P calls wait(C) after C already exited, \texttt{sema\_down} returns right away because C already did \texttt{sema\_up}. The other cases are handled in the cleanup step.
+If P waits before C exits: P sleeps on \texttt{sema\_down}. C wakes it
+up on exit and P frees the \texttt{child\_status}.
+If P waits after C exits: \texttt{sema\_down} returns immediately since
+C already called \texttt{sema\_up}.
+If P exits without waiting: the \texttt{child\_status} structs stay in
+memory. C can still write its exit code safely. This is a small leak but
+keeps things simple.
 \end{quote}
 
 \subsection{Rationale}
@@ -253,7 +281,9 @@ The downside is that is slower. Because we check every byte. The page-fault meth
 
 \textbf{Q17:} What advantages or disadvantages can you see to your design for file descriptors?
 \begin{quote}
-  Answer here
+Advantage: Array lookup is O(1) and simple to implement.
+Disadvantage: Fixed size of 128 limits open files per process. Also wastes
+memory when few files are open.
 \end{quote}
 
 \textbf{Q18:} The default \texttt{tid\_t} to \texttt{pid\_t} mapping is the identity mapping. If you changed it, what advantages are there to your approach?
@@ -279,7 +309,8 @@ Yes, working on exec and wait, gave us a much better understanding of how parent
 
 \textbf{Q3:} Is there some particular fact or hint we should give students in future quarters to help them solve the problems? Conversely, did you find any of our guidance to be misleading?
 \begin{quote}
-  Answer here
+A clear stack diagram for argument passing earlier in the docs would have
+helped. We spent too much time debugging the layout.
 \end{quote}
 
 \textbf{Q4:} Do you have any suggestions for us to more effectively assist students,
@@ -290,7 +321,7 @@ Sometimes, the difficulty of the homework feels a bit heavy compared to our leve
 
 \textbf{Q5:} Any other comments?
 \begin{quote}
-  Answer here
+Good assignment overall, we learned a lot.
 \end{quote}
 
 
